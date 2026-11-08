@@ -4,19 +4,18 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/zvzt/Adopt-Me/main/ma
 
 # Adopt Me Event Autofarm
 
-Keyless Luau autofarm for the Adopt Me Lightning Dimension event.
+Keyless, open source script for the Adopt Me Lightning Dimension event.
 
 ## Features
-- Lightning bottle farming, batch placement, pickup, and refills
-- Automatic Storm Chip Cookie Bait purchasing
-- Automatic lure claiming, re-baiting, and travel
-- Start / Stop controls and a compact UI
-- Anti-AFK, anti-lag, and error-logging toggles
+- Lightning bottle farming, batch placement, pickup, & refills
+- Auto Storm Chip Cookie Bait purchase
+- Auto lure claiming, re baiting, and travel
+- Start/Stop
+- Anti AFK, antilag, and error logging toggles :>
 
 ## Usage
-Copy and run the loadstring above in a compatible Luau environment. No key or separate loader is required.
+Copy the loadstring and run in your executor.
 
 ## Notes
-- Unofficial community project; compatibility may vary between platforms and executors.
-- Diagnostic log: `AdoptMeEventAutofarm_Errors.txt` in the executor workspace when error logging is enabled.
-- Roblox and Adopt Me are trademarks of their respective owners.
+- Compatibility may vary between executors. If questions contact me on Cord @zxt.lol
+- Log file: `AdoptMeEventAutofarm_Errors.txt` in exec workspace when error logging is enabled.
