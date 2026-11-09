@@ -18,13 +18,14 @@ if type(env.AdoptMeUniversalHubStop) == "function" then
 end
 
 local Hub = { alive = true, version = "2.0.0", connections = {}, logs = {}, statistics = {
-    actions = 0, fed = 0, luresClaimed = 0, luresBaited = 0, moneyTrees = 0,
+    actions = 0, fed = 0, luresClaimed = 0, luresBaited = 0, moneyTrees = 0, giftsOpened = 0, mailboxRequests = 0,
     pettings = 0, equipped = 0, moves = 0, errors = 0
 }}
 local DEFAULT = {
     autoNeeds = false, autoFeed = false, autoFurniture = true, autoArea = true,
     autoWalk = true, autoPetMe = true, autoLures = false, autoBait = false,
-    autoMoneyTree = false, autoEquip = false, autoAntiAfk = true,
+    autoMoneyTree = false, autoOpenGifts = false, autoMailbox = false,
+    autoEquip = false, autoAntiAfk = true,
     noClip = false, infiniteJump = false, antiVoid = true,
     lowGraphics = false, playerESP = false, walkSpeed = 16, jumpPower = 50,
     selectedPet = "", visible = true, minimized = false
@@ -381,7 +382,31 @@ local function handleArea(kind)
     end
     if currentInterior() ~= destination then
         local ok = select(1, travel(destination))
-        if ok then areaSession = {kind = kind, endsAt = os.clock() + 65} end
+        if ok then
+            areaSession = {kind = kind, endsAt = os.clock() + 65}
+            if kind == "camping" or kind == "bored" or kind == "beach_party" then
+                task.spawn(function()
+                    local started = os.clock()
+                    while Hub.alive and config.autoNeeds and os.clock() - started < 24 do
+                        if currentInterior() == destination then
+                            task.wait(2)
+                            local map = workspace:FindFirstChild("StaticMap")
+                            local place = kind == "bored" and "Park" or (kind == "camping" and "Campsite" or "Beach")
+                            local marker = kind == "bored" and "BoredAilmentTarget"
+                                or (kind == "camping" and "CampsiteOrigin" or "BeachPartyNavTarget")
+                            local part = map and map:FindFirstChild(place)
+                            part = part and part:FindFirstChild(marker, true)
+                            if part and part:IsA("BasePart") and root() then
+                                root().CFrame = part.CFrame + Vector3.new(0, 4, 0)
+                                log("NEED", "Arrived at " .. kind .. " target")
+                            end
+                            return
+                        end
+                        task.wait(0.5)
+                    end
+                end)
+            end
+        end
         return ok
     end
     areaSession = {kind = kind, endsAt = os.clock() + 57}
@@ -510,6 +535,57 @@ local function collectMoneyTrees()
             end
         end
     end
+end
+
+-- Inventory-related actions use server-validated API routes confirmed in ToolDB and IdleProgression.
+local function openOneGift()
+    local r = remote("ShopAPI/OpenGift")
+    if not r then return false end
+    for _, gift in pairs(getInventory("gifts")) do
+        if type(gift) == "table" and gift.unique then
+            local ok, category, kind = pcall(function()
+                return r:InvokeServer(gift.unique)
+            end)
+            if ok and category and kind then
+                Hub.statistics.giftsOpened += 1
+                log("GIFT", "Opened owned gift: " .. tostring(category) .. "/" .. tostring(kind))
+                return true
+            end
+            if not ok then log("WARN", "OpenGift: " .. tostring(category)) end
+            return false
+        end
+    end
+    return false
+end
+local function claimMailbox()
+    local ok = fire("HousingAPI/ClaimAllDeliveries")
+    if ok then
+        Hub.statistics.mailboxRequests += 1
+        log("MAIL", "Claim all deliveries requested")
+    end
+    return ok
+end
+local function claimLoginHandouts()
+    if fire("LootBoxAPI/ClaimLoginHandouts") then
+        log("LOGIN", "Login handouts requested")
+        return true
+    end
+    return false
+end
+local function penAction(pet, add)
+    if not pet then return false end
+    local definition = api.Items and api.Items.pets and api.Items.pets[pet.entry.kind]
+    if add and definition and definition.progression_locked then
+        log("WARN", "Pet is locked from idle progression")
+        return false
+    end
+    local age = pet.entry.properties and tonumber(pet.entry.properties.age)
+    if add and age == 6 then
+        log("WARN", "Max-age pet may not earn idle XP")
+    end
+    local ok = fire(add and "IdleProgressionAPI/AddPet" or "IdleProgressionAPI/RemovePet", pet.unique)
+    if ok then log("PEN", (add and "Assign" or "Remove") .. " request for " .. pet.kind) end
+    return ok
 end
 
 -- Local utilities. Every modification is reversible on stop.
@@ -896,6 +972,7 @@ renderTab = function()
         actionButton("STOP ALL FARMS", function()
             config.autoNeeds = false; config.autoLures = false
             config.autoBait = false; config.autoMoneyTree = false
+            config.autoOpenGifts = false; config.autoMailbox = false
             saveSettings(); renderTab(); log("INFO", "All farms paused")
         end)
         note("No guaranteed earnings: the game's server decides rewards and whether each action is valid.")
@@ -912,12 +989,20 @@ renderTab = function()
         toggle("Auto Claim Lures", "autoLures", "Uses normal and owned premium lures")
         toggle("Auto Place Bait", "autoBait", "Consumes owned lure bait; no purchases")
         toggle("Auto Money Trees", "autoMoneyTree", "Interacts with a nearby money tree when found")
+        toggle("Auto Open Owned Gifts", "autoOpenGifts", "Consumes owned gifts; OFF by default")
+        toggle("Auto Claim Mailbox", "autoMailbox", "Requests delivery claims at 5-minute intervals")
         note("Furniture, movement, and area tasks depend on game state. This is not an instant-completion script.")
     elseif selectedTab == "Pets" then
         refreshPetsTab()
         section("Pet commands")
         actionButton("Equip Selected Pet", function()
             equipPet(selectedPet())
+        end)
+        actionButton("Assign Selected Pet to Idle Pen", function()
+            penAction(selectedPet(), true)
+        end)
+        actionButton("Remove Selected Pet from Idle Pen", function()
+            penAction(selectedPet(), false)
         end)
         actionButton("Pet Me once", function()
             local p = selectedPet(); if p then
@@ -992,6 +1077,10 @@ renderTab = function()
                 pcall(env.AdoptMeEventAutofarmStop)
             end
         end)
+        section("Owned rewards")
+        actionButton("Open One Owned Gift (consumes gift)", openOneGift)
+        actionButton("Claim Mailbox Deliveries", claimMailbox)
+        actionButton("Claim Login Handouts", claimLoginHandouts)
         section("Pet pen")
         actionButton("Claim ready lures once", function()
             local was = config.autoLures; config.autoLures = true
@@ -1121,6 +1210,18 @@ task.spawn(function()
     while Hub.alive do
         safe("MONEY LOOP", collectMoneyTrees)
         task.wait(65)
+    end
+end)
+task.spawn(function()
+    while Hub.alive do
+        if config.autoOpenGifts then safe("AUTO GIFTS", openOneGift) end
+        task.wait(13)
+    end
+end)
+task.spawn(function()
+    while Hub.alive do
+        if config.autoMailbox then safe("AUTO MAILBOX", claimMailbox) end
+        task.wait(300)
     end
 end)
 task.spawn(function()
