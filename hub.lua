@@ -114,6 +114,11 @@ local function initApi()
     lureModules = lureModules and lureModules:FindFirstChild("modules")
     lureModules = lureModules and lureModules:FindFirstChild("Lures")
     if lureModules then
+        local lureActions = lureModules:FindFirstChild("LureActions")
+        if lureActions then
+            local aOk, a = pcall(require, lureActions)
+            if aOk then api.LureActions = a end
+        end
         local net = lureModules:FindFirstChild("LuresNet")
         if net then
             local loaded, value = pcall(require, net)
@@ -160,15 +165,18 @@ local function currentInterior()
 end
 local function travel(destination)
     if not api.Interior then return false, "InteriorsM unavailable" end
-    if currentInterior() == destination then return true, "Already there" end
+    local label = type(destination) == "table" and tostring(destination.destination_id) or tostring(destination)
+    if type(destination) == "string" and currentInterior() == destination then
+        return true, "Already there"
+    end
     local ok, err = pcall(function()
         api.Interior.enter(destination, "MainDoor", {})
     end)
     if ok then
-        log("TRAVEL", "Requested " .. destination)
-        return true, "Requested " .. destination
+        log("TRAVEL", "Requested " .. label)
+        return true, "Requested " .. label
     end
-    log("WARN", "Travel " .. destination .. ": " .. tostring(err))
+    log("WARN", "Travel " .. label .. ": " .. tostring(err))
     return false, tostring(err)
 end
 local function getInventory(category)
@@ -249,13 +257,21 @@ local priority = {
     beach_party = 14, pizza_party = 15, cat_cafe = 16, party_zone = 17,
     play = 18
 }
+local lastNeed = {}
 local function chooseAilment(pet)
     local list = petAilments(pet)
     table.sort(list, function(a, b)
         return (priority[a.kind] or 100) < (priority[b.kind] or 100)
     end)
     for _, item in ipairs(list) do
-        if priority[item.kind] then return item end
+        local key = pet.unique .. "/" .. item.kind
+        local allowedByPreference = not (item.kind == "pet_me" and not config.autoPetMe)
+            and not (item.kind == "walk" and not config.autoWalk)
+            and not ((item.kind == "hungry" or item.kind == "thirsty") and not config.autoFeed)
+        if priority[item.kind] and allowedByPreference
+            and os.clock() - (lastNeed[key] or -1000) >= 16 then
+            return item
+        end
     end
     return nil
 end
@@ -316,6 +332,15 @@ local function petPet(pet)
     if ok then Hub.statistics.pettings += 1; log("NEED", "Pet Me progress requested") end
     return ok
 end
+local function travelHome()
+    if api.LureActions then
+        local ok = safe("HOME TRAVEL", function()
+            api.LureActions.teleport_to_lure("BasicLure")
+        end)
+        if ok then return true end
+    end
+    return select(1, travel({destination_id = "housing", destination_house_owner = LocalPlayer}))
+end
 local lastMove = false
 local function walkPet()
     if not config.autoWalk then return false end
@@ -368,7 +393,6 @@ local function handleArea(kind)
     end
     return true
 end
-local lastNeed = {}
 local needsBusy = false
 local function handleNeed(pet, need)
     local key = pet.unique .. "/" .. need.kind
@@ -388,8 +412,7 @@ local function handleNeed(pet, need)
             if interaction then acted = activateInteraction(interaction, wrapperFor(pet)) end
         end
         if not acted and config.autoArea and currentInterior() ~= "housing" then
-            local destination = api.Nav and api.Nav.get_house_location_for_player(LocalPlayer) or "housing"
-            if type(destination) == "string" then acted = select(1, travel(destination)) end
+            acted = travelHome()
         end
     elseif areaTargets[kind] then
         acted = handleArea(kind)
@@ -653,6 +676,7 @@ local function headButton(text, x, fn)
     return b
 end
 local minimized = config.minimized
+if minimized then window.Size = UDim2.fromOffset(640, 51) end
 headButton("–", -79, function()
     minimized = not minimized
     config.minimized = minimized
@@ -843,7 +867,7 @@ renderTab = function()
         actionButton("START FULL FARM MODE", function()
             config.autoNeeds = true; config.autoLures = true
             config.autoFurniture = true; config.autoArea = true
-            config.autoPetMe = true; config.autoWalk = true
+            config.autoPetMe = true; config.autoWalk = true; config.autoEquip = true
             saveSettings(); renderTab(); log("INFO", "Farm mode enabled")
         end)
         actionButton("STOP ALL FARMS", function()
@@ -873,7 +897,10 @@ renderTab = function()
             equipPet(selectedPet())
         end)
         actionButton("Pet Me once", function()
-            local p = selectedPet(); if p then petPet(p) end
+            local p = selectedPet(); if p then
+                local previous = config.autoPetMe; config.autoPetMe = true
+                petPet(p); config.autoPetMe = previous
+            end
         end)
         actionButton("Feed existing hunger item once", function()
             local p = selectedPet(); if p then
@@ -894,13 +921,7 @@ renderTab = function()
             "CoffeeShop", "SkyCastle", "VIP", "TradingHub", "IceCream"}) do
             actionButton("Travel to " .. place, function() travel(place) end)
         end
-        actionButton("Travel Home", function()
-            if api.Nav then
-                local ok, destination = pcall(api.Nav.get_house_location_for_player, LocalPlayer)
-                if ok and type(destination) == "string" then travel(destination); return end
-            end
-            travel("housing")
-        end)
+        actionButton("Travel Home", travelHome)
         section("Position")
         actionButton("Save current position", function()
             if root() then Hub.position = root().CFrame; log("TRAVEL", "Position saved") end
