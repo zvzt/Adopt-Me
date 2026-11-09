@@ -16,12 +16,14 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/zvzt/Adopt-Me/main/hu
 - **Pet manager:** select an owned pet, equip it, one-click petting and feeding, auto-requip in farm mode
 - **Lures:** auto-claim eligible lures; bait placement opt-in and only from owned bait (no automatic purchases)
 - **Money trees:** attempts nearby money tree interactions when present (no remote reward bypass)
+- **Owned rewards:** optional auto-opening of owned gifts, auto-mailbox claims, one-click login handout claims
+- **Idle pet pen:** assign and remove a selected pet through the game’s idle-progression controls
 - **Travel:** commonly used interiors, home, saved position
 - **Utilities:** anti-AFK, anti-void, noclip, infinite jump, speed/jump settings, ESP, low graphics, rejoin
 - **Diagnostics:** logs, copy/save logs, settings persistence (when executor file APIs are supported)
 - **Event:** original Lightning Dimension autofarm launcher and stop button
 
-All farm switches start disabled unless changed in saved settings. Press **START FULL FARM MODE** to enable the needs + lure claim workers. Auto-bait, auto-feed and auto-money-tree remain off until separately enabled to prevent unintended consumption. Use **Right Shift** or the on-screen button to hide/show the window.
+All farm switches start disabled unless changed in saved settings. Press **START FULL FARM MODE** to enable the needs + lure claim workers. Auto-bait, auto-feed, auto-money-tree, auto-gift-opening and auto-mailbox remain off until separately enabled. Gift opening and bait/food use consume owned inventory items. Use **Right Shift** or the on-screen button to hide/show the window.
 
 ## Original Lightning Dimension autofarm
 
