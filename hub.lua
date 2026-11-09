@@ -102,7 +102,7 @@ local function initApi()
         Pets = "EquippedPets", PetActions = "PetActions", Interior = "InteriorsM",
         Nav = "new:NavigationHelper", Interactions = "InteractionsEngine",
         UI = "UIManager", Items = "InventoryDB",
-        UseItem = "new:UseItemHelper"
+        UseItem = "new:UseItemHelper", Admin = "new:AdminAbuse"
     }) do
         local loaded, value = pcall(fsys.load, moduleName)
         if loaded then api[key] = value end
@@ -258,8 +258,13 @@ local priority = {
     play = 18
 }
 local lastNeed = {}
+local areaSession = nil
 local function chooseAilment(pet)
     local list = petAilments(pet)
+    if areaSession then
+        if os.clock() < areaSession.endsAt then return nil end
+        areaSession = nil
+    end
     table.sort(list, function(a, b)
         return (priority[a.kind] or 100) < (priority[b.kind] or 100)
     end)
@@ -368,20 +373,38 @@ local function handleArea(kind)
     if not config.autoArea then return false end
     local destination = areaTargets[kind]
     if not destination then return false end
-    if currentInterior() ~= destination then
-        travel(destination)
-        return true
+    if kind == "party_zone" then
+        local admin = api.Admin
+        local ok, party = admin and pcall(admin.get_value, "party_zone")
+        if not ok or type(party) ~= "table" then return false end
+        destination = party.destination_id or destination
     end
-    if kind == "bored" or kind == "camping" then
+    if currentInterior() ~= destination then
+        local ok = select(1, travel(destination))
+        if ok then areaSession = {kind = kind, endsAt = os.clock() + 65} end
+        return ok
+    end
+    areaSession = {kind = kind, endsAt = os.clock() + 57}
+    if kind == "bored" or kind == "camping" or kind == "beach_party" then
         local map = workspace:FindFirstChild("StaticMap")
-        local site = map and map:FindFirstChild(kind == "bored" and "Park" or "Campsite")
-        local target = site and site:FindFirstChild(kind == "bored" and "BoredAilmentTarget" or "CampsiteOrigin", true)
+        local place = kind == "bored" and "Park" or (kind == "camping" and "Campsite" or "Beach")
+        local marker = kind == "bored" and "BoredAilmentTarget"
+            or (kind == "camping" and "CampsiteOrigin" or "BeachPartyNavTarget")
+        local site = map and map:FindFirstChild(place)
+        local target = site and site:FindFirstChild(marker, true)
         local r = root()
         if target and r and target:IsA("BasePart") then
-            if (r.Position - target.Position).Magnitude > 95 then
+            if (r.Position - target.Position).Magnitude > (kind == "beach_party" and 20 or 95) then
                 r.CFrame = CFrame.new(target.Position + Vector3.new(0, 4, 0))
                 log("NEED", "Moved to " .. kind .. " area")
             end
+        end
+    elseif kind == "party_zone" then
+        local ok, party = api.Admin and pcall(api.Admin.get_value, "party_zone")
+        if ok and party and type(party.position) == "table" and root() then
+            local p = party.position
+            root().CFrame = CFrame.new(tonumber(p[1]) or 0, (tonumber(p[2]) or 0) + 4,
+                tonumber(p[3]) or 0)
         end
     elseif kind == "sick" then
         local interiors = workspace:FindFirstChild("Interiors")
@@ -644,7 +667,7 @@ local gui = create("ScreenGui", playerGui, {
 })
 Hub.gui = gui
 local window = create("Frame", gui, {
-    Name = "Window", BackgroundColor3 = color.bg, BorderSizePixel = 0,
+    Name = "Window", BackgroundColor3 = color.bg, BorderSizePixel = 0, ClipsDescendants = true,
     Size = UDim2.fromOffset(640, 438), Position = UDim2.new(0.5, -320, 0.5, -219),
     Visible = config.visible
 })
